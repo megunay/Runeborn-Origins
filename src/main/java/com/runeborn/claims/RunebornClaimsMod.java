@@ -1877,8 +1877,14 @@ public final class RunebornClaimsMod implements ModInitializer {
             // bonus hit, then put it back so the normal hit cooldown is not extended or shortened.
             int previousInvulnerableTime = target.invulnerableTime;
             target.invulnerableTime = 0;
-            target.hurtServer((ServerLevel) target.level(), ((ServerLevel) target.level()).damageSources().magic(), bonusDamage);
+            float healthBefore = target.getHealth();
+            boolean applied = target.hurtServer((ServerLevel) target.level(), ((ServerLevel) target.level()).damageSources().magic(), bonusDamage);
             target.invulnerableTime = previousInvulnerableTime;
+            if (RuneBalance.DEBUG_RUNE_FEEDBACK) {
+                attacker.sendSystemMessage(Component.literal(String.format(java.util.Locale.ROOT,
+                        "[Rune debug] Ember bonus %.2f (x%.2f) applied=%s, target HP %.1f -> %.1f",
+                        bonusDamage, emberPower, applied, healthBefore, target.getHealth())), true);
+            }
         }
 
         double frostPower = getBestSocketedRuneMultiplier(weapon, "Frost");

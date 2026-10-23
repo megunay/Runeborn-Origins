@@ -41,3 +41,15 @@ Balance note for Phase 2: Ember is 0.25 to 0.5 hearts, so it is very subtle next
 - Ember's bonus hit leaves vanilla's "last hurt" amount at the bonus value, which can make a second hit inside the 10-tick window slightly stronger than vanilla. Watch for this in testing.
 - Two Runes of the same family on one weapon use only the stronger one (no stacking yet; Phase 2).
 - If compilation fails, the likely spots are `invulnerableTime` (Ember) and `getType().getCategory().getName()` (Verdant); both are mapping-sensitive in 26.2.
+
+## v0.15.4 — Ember debug readout
+
+Hits-to-kill is a poor Ember test (a diamond sword does 7 damage, so +0.5 to +1.0 doesn't change the hit count on a 20 HP mob). v0.15.4 shows an action-bar line on every Ember proc:
+`[Rune debug] Ember bonus 1.00 (x2.00) applied=true, target HP 13.0 -> 12.0`
+
+- `applied=true` and HP drops: Ember works.
+- `applied=false`: the bonus hit was rejected (report this).
+- No message at all: the hook isn't firing for that hit (report this).
+
+Better visible test: use a wooden sword (4 dmg) on a zombie (20 HP): no rune = 5 hits, Epic Ember (5 dmg) = 4 hits. Use fully charged swings.
+Turn the readout off with `DEBUG_RUNE_FEEDBACK = false` in `RuneBalance.java`.

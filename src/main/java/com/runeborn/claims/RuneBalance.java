@@ -10,6 +10,9 @@ package com.runeborn.claims;
 public final class RuneBalance {
     private RuneBalance() {}
 
+    /** Shows an action-bar line on each Ember proc. Set to false before a public release. */
+    public static final boolean DEBUG_RUNE_FEEDBACK = true;
+
     // Ember: bonus melee damage.
     public static final double EMBER_BASE_DAMAGE = 0.5;
     public static final double EMBER_MAX_DAMAGE = 2.0;
