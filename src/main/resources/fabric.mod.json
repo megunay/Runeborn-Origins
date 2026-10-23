@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "runeborn_claims",
+  "version": "${version}",
+  "name": "Runeborn Claims & Events",
+  "description": "Runeborn server systems: claims progression, economy, system shop, player marketplace, jobs, events, and the Rune Forge.",
+  "authors": ["Runeborn"],
+  "license": "MIT",
+  "environment": "server",
+  "mixins": ["runeborn-claims.mixins.json"],
+  "entrypoints": {
+    "main": [
+      "com.runeborn.claims.RunebornClaimsMod"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.19.3",
+    "minecraft": "26.2",
+    "fabric-api": ">=0.158.0+26.2",
+    "luckperms": ">=5.5.57",
+    "openpartiesandclaims": ">=0.31.6",
+    "essential_commands": "0.41.0-mc26.2"
+  }
+}

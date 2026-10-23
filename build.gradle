@@ -1,0 +1,59 @@
+plugins {
+    id 'net.fabricmc.fabric-loom' version "${loom_version}"
+    id 'maven-publish'
+}
+
+group = project.maven_group
+version = project.mod_version
+
+base {
+    archivesName = project.archives_base_name
+}
+
+loom {
+    splitEnvironmentSourceSets()
+
+    mods {
+        "runeborn_claims" {
+            sourceSet sourceSets.main
+        }
+    }
+}
+
+repositories {
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+
+    // LuckPerms is provided by the server as a mod; do not bundle the API.
+    compileOnly "net.luckperms:api:5.5"
+    // Compile against Essential Commands for the RTP command mixin; the server provides the actual mod.
+    compileOnly files("libs/essential_commands-0.41.0-mc26.2.jar")
+    // Compile against OPAC claim-action API; server provides the actual mod.
+    compileOnly files("libs/open-parties-and-claims-fabric-26.2-0.31.6.jar")
+}
+
+processResources {
+    def version = project.version
+    inputs.property "version", version
+    filesMatching("fabric.mod.json") {
+        expand "version": version
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    it.options.release = 25
+}
+
+java {
+    withSourcesJar()
+    sourceCompatibility = JavaVersion.VERSION_25
+    targetCompatibility = JavaVersion.VERSION_25
+}
+
+jar {
+    inputs.property "archivesName", project.base.archivesName
+}

@@ -1,0 +1,13 @@
+{
+  "required": false,
+  "minVersion": "0.8",
+  "package": "com.runeborn.claims.mixin",
+  "mixins": [
+    "RandomTeleportCommandMixin",
+    "ParkourItemPickupMixin",
+    "SystemMarketMenuMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
