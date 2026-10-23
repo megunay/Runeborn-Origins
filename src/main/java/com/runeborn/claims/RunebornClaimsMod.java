@@ -218,7 +218,7 @@ public final class RunebornClaimsMod implements ModInitializer {
         ServerEntityCombatEvents.AFTER_KILLED_OTHER_ENTITY.register((level, entity, killedEntity, damageSource) -> {
             if (entity instanceof ServerPlayer player) {
                 handleHunterRewards(player, killedEntity);
-                applyVerdantOnKill(player);
+                applyVerdantOnKill(player, killedEntity);
             }
         });
 
@@ -226,6 +226,10 @@ public final class RunebornClaimsMod implements ModInitializer {
         // determines whether an effect is active.
         ServerLivingEntityEvents.AFTER_DAMAGE.register((target, source, baseDamageTaken, damageTaken, blocked) -> {
             if (!(source.getEntity() instanceof ServerPlayer attacker) || target.level().isClientSide()) return;
+            // Melee only: projectiles (arrows, tridents) have a different direct entity, and a
+            // fully blocked or absorbed hit (shield) deals no damage and should not proc runes.
+            if (source.getDirectEntity() != attacker || blocked || damageTaken <= 0.0F) return;
+            if (target == attacker) return;
             applyWeaponRuneHitEffects(attacker, target);
         });
 
@@ -1866,15 +1870,22 @@ public final class RunebornClaimsMod implements ModInitializer {
         if (emberPower > 0 && target.isAlive()) {
             // DamageSource.magic() has no player attacker, so this bonus cannot recursively
             // trigger the weapon-rune callback.
-            float bonusDamage = (float) Math.min(2.0, 0.5 * emberPower);
+            float bonusDamage = (float) RuneBalance.emberDamage(emberPower);
+            // The bonus lands immediately after the main hit, while the target is still inside its
+            // invulnerability frames. Vanilla ignores a follow-up hit that is not larger than the
+            // previous one, which would silently swallow this small bonus. Clear the timer for the
+            // bonus hit, then put it back so the normal hit cooldown is not extended or shortened.
+            int previousInvulnerableTime = target.invulnerableTime;
+            target.invulnerableTime = 0;
             target.hurtServer((ServerLevel) target.level(), ((ServerLevel) target.level()).damageSources().magic(), bonusDamage);
+            target.invulnerableTime = previousInvulnerableTime;
         }
 
         double frostPower = getBestSocketedRuneMultiplier(weapon, "Frost");
         if (frostPower > 0 && target.isAlive()) {
-            double chance = Math.min(0.35, 0.10 * frostPower);
+            double chance = RuneBalance.frostChance(frostPower);
             if (Math.random() < chance) {
-                int duration = (int) Math.round(30 * frostPower);
+                int duration = RuneBalance.frostDurationTicks(frostPower);
                 target.addEffect(new MobEffectInstance(MobEffects.SLOWNESS, duration, 0), attacker);
             }
         }
@@ -1885,8 +1896,7 @@ public final class RunebornClaimsMod implements ModInitializer {
         for (ItemStack armor : java.util.List.of(player.getItemBySlot(EquipmentSlot.FEET), player.getItemBySlot(EquipmentSlot.LEGS), player.getItemBySlot(EquipmentSlot.CHEST), player.getItemBySlot(EquipmentSlot.HEAD))) {
             bestMultiplier = Math.max(bestMultiplier, getBestSocketedRuneMultiplier(armor, "Void"));
         }
-        if (bestMultiplier <= 0) return 0;
-        return Math.min(0.30, 0.10 * bestMultiplier);
+        return RuneBalance.voidChance(bestMultiplier);
     }
 
     private double getBestSocketedRuneMultiplier(ItemStack stack, String family) {
@@ -1898,25 +1908,20 @@ public final class RunebornClaimsMod implements ModInitializer {
             String socketFamily = tag.getStringOr("runeborn_socket_" + i + "_family", "");
             String rarity = tag.getStringOr("runeborn_socket_" + i + "_rarity", "");
             if (!family.equals(socketFamily)) continue;
-            double multiplier = switch (rarity) {
-                case "Common" -> 1.0;
-                case "Uncommon" -> 1.25;
-                case "Rare" -> 1.5;
-                case "Epic" -> 2.0;
-                default -> 0.0;
-            };
-            best = Math.max(best, multiplier);
+            best = Math.max(best, RuneBalance.rarityMultiplier(rarity));
         }
         return best;
     }
 
-    private void applyVerdantOnKill(ServerPlayer player) {
-        double bestMultiplier = 0;
-        bestMultiplier = Math.max(bestMultiplier, getBestSocketedRuneMultiplier(player.getMainHandItem(), "Verdant"));
+    private void applyVerdantOnKill(ServerPlayer player, LivingEntity killedEntity) {
+        // Design: heal after a hostile mob kill only, not passive animals or players.
+        if (killedEntity instanceof ServerPlayer) return;
+        if (!"monster".equals(killedEntity.getType().getCategory().getName())) return;
+        double bestMultiplier = getBestSocketedRuneMultiplier(player.getMainHandItem(), "Verdant");
         if (bestMultiplier <= 0) return;
-        double chance = Math.min(0.30, 0.10 * bestMultiplier);
+        double chance = RuneBalance.verdantChance(bestMultiplier);
         if (Math.random() < chance) {
-            float healing = (float) Math.min(3.0, 1.0 * bestMultiplier);
+            float healing = (float) RuneBalance.verdantHeal(bestMultiplier);
             player.heal(healing);
             player.sendSystemMessage(Component.literal("[Rune] Verdant restored " + String.format(java.util.Locale.ROOT, "%.1f", healing) + " health."), true);
         }
