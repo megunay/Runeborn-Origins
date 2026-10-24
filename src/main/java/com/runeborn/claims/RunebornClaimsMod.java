@@ -220,6 +220,7 @@ public final class RunebornClaimsMod implements ModInitializer {
                 handleHunterRewards(player, killedEntity);
                 applyVerdantOnKill(player, killedEntity);
                 applyCinderOnKill(player, killedEntity);
+                applyShardDropOnKill(player, killedEntity);
             }
         });
 
@@ -1944,6 +1945,34 @@ public final class RunebornClaimsMod implements ModInitializer {
     private boolean isHostileKill(LivingEntity killedEntity) {
         if (killedEntity instanceof ServerPlayer) return false;
         return "monster".equals(killedEntity.getType().getCategory().getName());
+    }
+
+    // Combat shard drops: [window start millis, shards granted in window]. In memory only.
+    private final Map<UUID, long[]> shardDropWindows = new HashMap<>();
+
+    private void applyShardDropOnKill(ServerPlayer player, LivingEntity killedEntity) {
+        if (!isHostileKill(killedEntity)) return;
+        if (player.isCreative() || player.isSpectator()) return;
+        if (eventParticipants.containsKey(player.getUUID())) return;
+
+        double maxHealth = killedEntity.getMaxHealth();
+        if (Math.random() >= RuneBalance.shardDropChance(maxHealth)) return;
+        int wanted = RuneBalance.shardDropAmount(maxHealth, Math.random());
+
+        long now = System.currentTimeMillis();
+        long[] window = shardDropWindows.computeIfAbsent(player.getUUID(), id -> new long[]{now, 0L});
+        if (now - window[0] >= RuneBalance.SHARD_WINDOW_MILLIS) {
+            window[0] = now;
+            window[1] = 0L;
+        }
+        int granted = RuneBalance.shardsAllowed((int) window[1], wanted);
+        if (granted <= 0) return;
+        window[1] += granted;
+
+        ItemStack shards = createRuneShard(granted);
+        player.getInventory().add(shards);
+        if (!shards.isEmpty()) player.drop(shards, false);
+        player.sendSystemMessage(Component.literal("[Rune] The fallen foe left " + granted + " Rune Shard" + (granted == 1 ? "" : "s") + "."), true);
     }
 
     private void applyCinderOnKill(ServerPlayer player, LivingEntity killedEntity) {

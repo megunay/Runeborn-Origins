@@ -127,6 +127,43 @@ public final class RuneBalance {
         return Math.min(BLOOM_MAX_HEAL, BLOOM_BASE_HEAL * strength);
     }
 
+    // ---- Rune Shard drops from combat (Phase 4) ----
+
+    /** Max health at or above which a hostile mob counts as tough / boss-tier. */
+    public static final double TOUGH_MOB_MAX_HEALTH = 30.0;
+    public static final double BOSS_MOB_MAX_HEALTH = 100.0;
+
+    public static final double SHARD_DROP_CHANCE_NORMAL = 0.04;
+    public static final double SHARD_DROP_CHANCE_TOUGH = 0.12;
+    public static final double SHARD_DROP_CHANCE_BOSS = 1.0;
+    public static final int SHARD_BOSS_MIN = 2;
+    public static final int SHARD_BOSS_MAX = 4;
+
+    /** Per-player cap on combat shards per rolling hour, to blunt mob farms. */
+    public static final int SHARD_HOURLY_CAP = 20;
+    public static final long SHARD_WINDOW_MILLIS = 60L * 60L * 1000L;
+
+    public static double shardDropChance(double mobMaxHealth) {
+        if (mobMaxHealth >= BOSS_MOB_MAX_HEALTH) return SHARD_DROP_CHANCE_BOSS;
+        if (mobMaxHealth >= TOUGH_MOB_MAX_HEALTH) return SHARD_DROP_CHANCE_TOUGH;
+        return SHARD_DROP_CHANCE_NORMAL;
+    }
+
+    /** Shards for a successful drop. roll01 is a uniform random in [0,1). Boss-tier gives 2 to 4. */
+    public static int shardDropAmount(double mobMaxHealth, double roll01) {
+        if (mobMaxHealth >= BOSS_MOB_MAX_HEALTH) {
+            int span = SHARD_BOSS_MAX - SHARD_BOSS_MIN + 1;
+            int offset = (int) Math.floor(Math.max(0.0, Math.min(0.999999999, roll01)) * span);
+            return SHARD_BOSS_MIN + offset;
+        }
+        return 1;
+    }
+
+    /** Shards actually granted after applying the hourly cap. */
+    public static int shardsAllowed(int alreadyThisWindow, int wanted) {
+        return Math.max(0, Math.min(wanted, SHARD_HOURLY_CAP - Math.max(0, alreadyThisWindow)));
+    }
+
     /** Rarity name to multiplier. Unknown rarities return 0 so they grant nothing. */
     public static double rarityMultiplier(String rarity) {
         if (rarity == null) return 0.0;
