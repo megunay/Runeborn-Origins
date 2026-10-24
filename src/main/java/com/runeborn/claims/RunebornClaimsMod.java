@@ -51,6 +51,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceKey;
+import net.minecraft.world.RandomizableContainer;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.storage.LevelResource;
 import net.minecraft.world.entity.LivingEntity;
@@ -164,6 +165,21 @@ public final class RunebornClaimsMod implements ModInitializer {
             }
             return InteractionResult.PASS;
         });
+
+        // Exploration shards: note an unopened generated loot chest when a player interacts with it,
+        // then confirm one tick later that it really opened (claim protection may have denied it).
+        UseBlockCallback.EVENT.register((player, level, hand, hit) -> {
+            if (level.isClientSide() || hand != InteractionHand.MAIN_HAND || !(player instanceof ServerPlayer serverPlayer)) return InteractionResult.PASS;
+            if (serverPlayer.isCreative() || serverPlayer.isSpectator() || eventParticipants.containsKey(serverPlayer.getUUID())) return InteractionResult.PASS;
+            if (level.getBlockEntity(hit.getBlockPos()) instanceof RandomizableContainer container && container.getLootTable() != null) {
+                String path = container.getLootTable().identifier().getPath();
+                if (RuneBalance.explorationShardChance(path) > 0) {
+                    pendingLootChests.add(new PendingLootChest(serverPlayer, level, hit.getBlockPos().immutable(), path));
+                }
+            }
+            return InteractionResult.PASS;
+        });
+        ServerTickEvents.END_SERVER_TICK.register(server -> processPendingLootChests());
 
         // Runeborn controls who may create claims. OPAC remains responsible for
         // the actual claim storage and all other claim actions.
@@ -1945,6 +1961,47 @@ public final class RunebornClaimsMod implements ModInitializer {
     private boolean isHostileKill(LivingEntity killedEntity) {
         if (killedEntity instanceof ServerPlayer) return false;
         return "monster".equals(killedEntity.getType().getCategory().getName());
+    }
+
+    private static final class PendingLootChest {
+        final ServerPlayer player;
+        final Level level;
+        final BlockPos pos;
+        final String lootTablePath;
+        int ticksLeft = 1;
+
+        PendingLootChest(ServerPlayer player, Level level, BlockPos pos, String lootTablePath) {
+            this.player = player;
+            this.level = level;
+            this.pos = pos;
+            this.lootTablePath = lootTablePath;
+        }
+    }
+
+    private final List<PendingLootChest> pendingLootChests = new ArrayList<>();
+
+    private void processPendingLootChests() {
+        if (pendingLootChests.isEmpty()) return;
+        List<PendingLootChest> ready = new ArrayList<>();
+        for (java.util.Iterator<PendingLootChest> it = pendingLootChests.iterator(); it.hasNext(); ) {
+            PendingLootChest pending = it.next();
+            if (pending.ticksLeft-- > 0) continue;
+            it.remove();
+            ready.add(pending);
+        }
+        for (PendingLootChest pending : ready) {
+            if (pending.player.isRemoved()) continue;
+            // The loot table is cleared once the chest has actually been opened.
+            if (!(pending.level.getBlockEntity(pending.pos) instanceof RandomizableContainer container)) continue;
+            if (container.getLootTable() != null) continue;
+            if (Math.random() >= RuneBalance.explorationShardChance(pending.lootTablePath)) continue;
+            int amount = RuneBalance.explorationShardAmount(pending.lootTablePath, Math.random());
+            if (amount <= 0) continue;
+            ItemStack shards = createRuneShard(amount);
+            pending.player.getInventory().add(shards);
+            if (!shards.isEmpty()) pending.player.drop(shards, false);
+            pending.player.sendSystemMessage(Component.literal("[Rune] You discovered " + amount + " Rune Shard" + (amount == 1 ? "" : "s") + " hidden in the chest."), true);
+        }
     }
 
     // Combat shard drops: [window start millis, shards granted in window]. In memory only.

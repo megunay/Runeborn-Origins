@@ -164,6 +164,41 @@ public final class RuneBalance {
         return Math.max(0, Math.min(wanted, SHARD_HOURLY_CAP - Math.max(0, alreadyThisWindow)));
     }
 
+    // ---- Rune Shards from exploration (Phase 4, part 2) ----
+
+    public static final double EXPLORE_CHANCE_RICH = 0.50;
+    public static final double EXPLORE_CHANCE_COMMON = 0.20;
+
+    private static final String[] RICH_STRUCTURES = {
+            "ancient_city", "stronghold", "bastion", "end_city", "woodland_mansion", "trial_chambers"
+    };
+    private static final String[] COMMON_STRUCTURES = {
+            "simple_dungeon", "abandoned_mineshaft", "desert_pyramid", "jungle_temple", "nether_bridge",
+            "ruined_portal", "shipwreck", "buried_treasure", "pillager_outpost", "igloo_chest"
+    };
+
+    /**
+     * Chance of a bonus Rune Shard the first time a generated loot chest is opened.
+     * lootTablePath is the loot table id path, for example "chests/ancient_city".
+     * Villages and the spawn bonus chest give nothing.
+     */
+    public static double explorationShardChance(String lootTablePath) {
+        if (lootTablePath == null || !lootTablePath.startsWith("chests/")) return 0.0;
+        if (lootTablePath.equals("chests/spawn_bonus_chest") || lootTablePath.contains("village")) return 0.0;
+        for (String key : RICH_STRUCTURES) if (lootTablePath.contains(key)) return EXPLORE_CHANCE_RICH;
+        for (String key : COMMON_STRUCTURES) if (lootTablePath.contains(key)) return EXPLORE_CHANCE_COMMON;
+        return 0.0;
+    }
+
+    /** Rich structures give 1 or 2 shards; everything else gives 1. roll01 is uniform in [0,1). */
+    public static int explorationShardAmount(String lootTablePath, double roll01) {
+        if (lootTablePath == null) return 0;
+        for (String key : RICH_STRUCTURES) {
+            if (lootTablePath.contains(key)) return roll01 < 0.5 ? 1 : 2;
+        }
+        return 1;
+    }
+
     /** Rarity name to multiplier. Unknown rarities return 0 so they grant nothing. */
     public static double rarityMultiplier(String rarity) {
         if (rarity == null) return 0.0;
