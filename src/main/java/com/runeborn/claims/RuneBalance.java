@@ -50,6 +50,83 @@ public final class RuneBalance {
         return first + STACK_SECONDARY_SHARE * second;
     }
 
+    // ---- Rune words (weapons only: two sockets, inserted in order) ----
+
+    /** Both Runes must be at least this strong (Rare = 1.5x, Epic = 2.0x) to form a word. */
+    public static final double WORD_MIN_RARITY_MULTIPLIER = 1.5;
+
+    public enum RuneWord {
+        CINDER("Cinder", "Ember", "Verdant", "Hostile kills may grant Regeneration"),
+        RIME("Rime", "Frost", "Ember", "Slowed targets take extra damage"),
+        HOLLOW("Hollow", "Void", "Frost", "Frost procs also apply Weakness"),
+        BLOOM("Bloom", "Verdant", "Void", "Avoiding fall damage heals you");
+
+        public final String displayName;
+        public final String first;
+        public final String second;
+        public final String description;
+
+        RuneWord(String displayName, String first, String second, String description) {
+            this.displayName = displayName;
+            this.first = first;
+            this.second = second;
+            this.description = description;
+        }
+    }
+
+    /** A word that is currently active, with its strength (average of the two rarity multipliers). */
+    public record ActiveWord(RuneWord word, double strength) {}
+
+    /**
+     * Detects a Rune word from the first two sockets, in insertion order.
+     * Returns null unless the exact ordered pair matches and both Runes are Rare or Epic.
+     */
+    public static ActiveWord detectWord(String family0, String rarity0, String family1, String rarity1) {
+        double m0 = rarityMultiplier(rarity0);
+        double m1 = rarityMultiplier(rarity1);
+        if (m0 < WORD_MIN_RARITY_MULTIPLIER || m1 < WORD_MIN_RARITY_MULTIPLIER) return null;
+        if (family0 == null || family1 == null) return null;
+        for (RuneWord w : RuneWord.values()) {
+            if (w.first.equals(family0) && w.second.equals(family1)) {
+                return new ActiveWord(w, (m0 + m1) / 2.0);
+            }
+        }
+        return null;
+    }
+
+    // Cinder: chance on hostile kill to gain Regeneration I.
+    public static final double CINDER_BASE_CHANCE = 0.15;
+    public static final double CINDER_MAX_CHANCE = 0.30;
+    public static final int CINDER_BASE_TICKS = 100;
+
+    // Rime: extra magic damage when the target is slowed.
+    public static final double RIME_BASE_DAMAGE = 1.0;
+    public static final double RIME_MAX_DAMAGE = 3.0;
+
+    // Bloom: heal when a fall is negated by Void armor.
+    public static final double BLOOM_BASE_HEAL = 1.0;
+    public static final double BLOOM_MAX_HEAL = 3.0;
+
+    public static double cinderChance(double strength) {
+        if (strength <= 0) return 0.0;
+        return Math.min(CINDER_MAX_CHANCE, CINDER_BASE_CHANCE * strength);
+    }
+
+    public static int cinderRegenTicks(double strength) {
+        if (strength <= 0) return 0;
+        return (int) Math.round(CINDER_BASE_TICKS * strength);
+    }
+
+    public static double rimeDamage(double strength) {
+        if (strength <= 0) return 0.0;
+        return Math.min(RIME_MAX_DAMAGE, RIME_BASE_DAMAGE * strength);
+    }
+
+    public static double bloomHeal(double strength) {
+        if (strength <= 0) return 0.0;
+        return Math.min(BLOOM_MAX_HEAL, BLOOM_BASE_HEAL * strength);
+    }
+
     /** Rarity name to multiplier. Unknown rarities return 0 so they grant nothing. */
     public static double rarityMultiplier(String rarity) {
         if (rarity == null) return 0.0;

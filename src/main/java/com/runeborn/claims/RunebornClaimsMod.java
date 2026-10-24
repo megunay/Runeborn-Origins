@@ -219,6 +219,7 @@ public final class RunebornClaimsMod implements ModInitializer {
             if (entity instanceof ServerPlayer player) {
                 handleHunterRewards(player, killedEntity);
                 applyVerdantOnKill(player, killedEntity);
+                applyCinderOnKill(player, killedEntity);
             }
         });
 
@@ -237,7 +238,15 @@ public final class RunebornClaimsMod implements ModInitializer {
             if (!(entity instanceof ServerPlayer player) || player.level().isClientSide()) return true;
             if (!"fall".equals(source.getMsgId())) return true;
             double chance = getBestVoidArmorChance(player);
-            return chance <= 0 || Math.random() >= chance;
+            if (chance <= 0 || Math.random() >= chance) return true;
+            // Fall damage negated by Void armor. Bloom (Verdant -> Void) heals the wielder.
+            RuneBalance.ActiveWord word = getActiveRuneWord(player.getMainHandItem());
+            if (word != null && word.word() == RuneBalance.RuneWord.BLOOM) {
+                float heal = (float) RuneBalance.bloomHeal(word.strength());
+                player.heal(heal);
+                player.sendSystemMessage(Component.literal("[Rune Word] Bloom restored " + String.format(java.util.Locale.ROOT, "%.1f", heal) + " health."), true);
+            }
+            return false;
         });
     }
 
@@ -1864,22 +1873,30 @@ public final class RunebornClaimsMod implements ModInitializer {
                 || path.equals("blackstone") || path.equals("basalt") || path.equals("smooth_basalt");
     }
 
+    /**
+     * Magic damage with no player attacker (cannot re-trigger the weapon-rune callback).
+     * The bonus lands right after the main hit, inside vanilla invulnerability frames, where a
+     * follow-up hit that is not larger than the previous one is ignored. Clear the timer for the
+     * bonus hit, then restore it so the normal hit cooldown is unchanged.
+     */
+    private boolean dealRuneMagicDamage(LivingEntity target, float amount) {
+        ServerLevel level = (ServerLevel) target.level();
+        int previousInvulnerableTime = target.invulnerableTime;
+        target.invulnerableTime = 0;
+        boolean applied = target.hurtServer(level, level.damageSources().magic(), amount);
+        target.invulnerableTime = previousInvulnerableTime;
+        return applied;
+    }
+
     private void applyWeaponRuneHitEffects(ServerPlayer attacker, LivingEntity target) {
         ItemStack weapon = attacker.getMainHandItem();
+        RuneBalance.ActiveWord word = getActiveRuneWord(weapon);
+
         double emberPower = getStackedSocketedRuneMultiplier(weapon, "Ember");
         if (emberPower > 0 && target.isAlive()) {
-            // DamageSource.magic() has no player attacker, so this bonus cannot recursively
-            // trigger the weapon-rune callback.
             float bonusDamage = (float) RuneBalance.emberDamage(emberPower);
-            // The bonus lands immediately after the main hit, while the target is still inside its
-            // invulnerability frames. Vanilla ignores a follow-up hit that is not larger than the
-            // previous one, which would silently swallow this small bonus. Clear the timer for the
-            // bonus hit, then put it back so the normal hit cooldown is not extended or shortened.
-            int previousInvulnerableTime = target.invulnerableTime;
-            target.invulnerableTime = 0;
             float healthBefore = target.getHealth();
-            boolean applied = target.hurtServer((ServerLevel) target.level(), ((ServerLevel) target.level()).damageSources().magic(), bonusDamage);
-            target.invulnerableTime = previousInvulnerableTime;
+            boolean applied = dealRuneMagicDamage(target, bonusDamage);
             if (RuneBalance.DEBUG_RUNE_FEEDBACK) {
                 attacker.sendSystemMessage(Component.literal(String.format(java.util.Locale.ROOT,
                         "[Rune debug] Ember bonus %.2f (x%.2f) applied=%s, target HP %.1f -> %.1f",
@@ -1893,7 +1910,49 @@ public final class RunebornClaimsMod implements ModInitializer {
             if (Math.random() < chance) {
                 int duration = RuneBalance.frostDurationTicks(frostPower);
                 target.addEffect(new MobEffectInstance(MobEffects.SLOWNESS, duration, 0), attacker);
+                // Hollow (Void -> Frost): Frost procs also weaken the target.
+                if (word != null && word.word() == RuneBalance.RuneWord.HOLLOW) {
+                    target.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, duration, 0), attacker);
+                }
             }
+        }
+
+        // Rime (Frost -> Ember): extra damage against slowed targets (including a fresh Frost proc).
+        if (word != null && word.word() == RuneBalance.RuneWord.RIME && target.isAlive()
+                && target.hasEffect(MobEffects.SLOWNESS)) {
+            float rimeDamage = (float) RuneBalance.rimeDamage(word.strength());
+            float healthBefore = target.getHealth();
+            boolean applied = dealRuneMagicDamage(target, rimeDamage);
+            if (RuneBalance.DEBUG_RUNE_FEEDBACK) {
+                attacker.sendSystemMessage(Component.literal(String.format(java.util.Locale.ROOT,
+                        "[Rune debug] Rime bonus %.2f applied=%s, target HP %.1f -> %.1f",
+                        rimeDamage, applied, healthBefore, target.getHealth())), true);
+            }
+        }
+    }
+
+    /** Active Rune word on a weapon (first two sockets, in order), or null. */
+    private RuneBalance.ActiveWord getActiveRuneWord(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return null;
+        CompoundTag tag = getCustomTag(stack);
+        if (tag.getIntOr("runeborn_socket_count", 0) < 2) return null;
+        return RuneBalance.detectWord(
+                tag.getStringOr("runeborn_socket_0_family", ""), tag.getStringOr("runeborn_socket_0_rarity", ""),
+                tag.getStringOr("runeborn_socket_1_family", ""), tag.getStringOr("runeborn_socket_1_rarity", ""));
+    }
+
+    private boolean isHostileKill(LivingEntity killedEntity) {
+        if (killedEntity instanceof ServerPlayer) return false;
+        return "monster".equals(killedEntity.getType().getCategory().getName());
+    }
+
+    private void applyCinderOnKill(ServerPlayer player, LivingEntity killedEntity) {
+        if (!isHostileKill(killedEntity)) return;
+        RuneBalance.ActiveWord word = getActiveRuneWord(player.getMainHandItem());
+        if (word == null || word.word() != RuneBalance.RuneWord.CINDER) return;
+        if (Math.random() < RuneBalance.cinderChance(word.strength())) {
+            player.addEffect(new MobEffectInstance(MobEffects.REGENERATION, RuneBalance.cinderRegenTicks(word.strength()), 0));
+            player.sendSystemMessage(Component.literal("[Rune Word] Cinder kindles Regeneration."), true);
         }
     }
 
@@ -1932,8 +1991,7 @@ public final class RunebornClaimsMod implements ModInitializer {
 
     private void applyVerdantOnKill(ServerPlayer player, LivingEntity killedEntity) {
         // Design: heal after a hostile mob kill only, not passive animals or players.
-        if (killedEntity instanceof ServerPlayer) return;
-        if (!"monster".equals(killedEntity.getType().getCategory().getName())) return;
+        if (!isHostileKill(killedEntity)) return;
         double bestMultiplier = getStackedSocketedRuneMultiplier(player.getMainHandItem(), "Verdant");
         if (bestMultiplier <= 0) return;
         double chance = RuneBalance.verdantChance(bestMultiplier);
@@ -2447,6 +2505,12 @@ public final class RunebornClaimsMod implements ModInitializer {
                             "Rune " + (i + 1) + ": " + rarity + " " + family,
                             List.of("Property: " + property, "Installed permanently."));
                 }
+                RuneBalance.ActiveWord activeWord = getActiveRuneWord(equipment);
+                if (activeWord != null) {
+                    setRuneForgeIcon(container, 26, "minecraft:nether_star",
+                            "Rune Word: " + activeWord.word().displayName,
+                            List.of(activeWord.word().first + " -> " + activeWord.word().second, activeWord.word().description));
+                }
             }
         }
 
@@ -2480,6 +2544,11 @@ public final class RunebornClaimsMod implements ModInitializer {
             String rarity = tag.getStringOr("runeborn_socket_" + i + "_rarity", "Unknown");
             String property = tag.getStringOr("runeborn_socket_" + i + "_property", "Unknown");
             lore.add(Component.literal("Rune " + (i + 1) + ": " + rarity + " " + family + " (" + property + ")"));
+        }
+        RuneBalance.ActiveWord activeWord = getActiveRuneWord(equipment);
+        if (activeWord != null) {
+            lore.add(Component.literal("Rune Word: " + activeWord.word().displayName + " (" + activeWord.word().first + " -> " + activeWord.word().second + ")"));
+            lore.add(Component.literal("Rune Word effect: " + activeWord.word().description));
         }
         equipment.set(DataComponents.LORE, new ItemLore(lore));
     }
