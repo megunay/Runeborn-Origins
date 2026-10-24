@@ -1866,7 +1866,7 @@ public final class RunebornClaimsMod implements ModInitializer {
 
     private void applyWeaponRuneHitEffects(ServerPlayer attacker, LivingEntity target) {
         ItemStack weapon = attacker.getMainHandItem();
-        double emberPower = getBestSocketedRuneMultiplier(weapon, "Ember");
+        double emberPower = getStackedSocketedRuneMultiplier(weapon, "Ember");
         if (emberPower > 0 && target.isAlive()) {
             // DamageSource.magic() has no player attacker, so this bonus cannot recursively
             // trigger the weapon-rune callback.
@@ -1887,7 +1887,7 @@ public final class RunebornClaimsMod implements ModInitializer {
             }
         }
 
-        double frostPower = getBestSocketedRuneMultiplier(weapon, "Frost");
+        double frostPower = getStackedSocketedRuneMultiplier(weapon, "Frost");
         if (frostPower > 0 && target.isAlive()) {
             double chance = RuneBalance.frostChance(frostPower);
             if (Math.random() < chance) {
@@ -1905,25 +1905,36 @@ public final class RunebornClaimsMod implements ModInitializer {
         return RuneBalance.voidChance(bestMultiplier);
     }
 
+    /** Strongest matching Rune only (used by Void armor, which never stacks). */
     private double getBestSocketedRuneMultiplier(ItemStack stack, String family) {
-        if (stack == null || stack.isEmpty()) return 0;
+        double best = 0;
+        for (double m : getSocketedRuneMultipliers(stack, family)) best = Math.max(best, m);
+        return best;
+    }
+
+    /** Diminishing stack of same-family Runes on one item (weapons: Ember, Frost, Verdant). */
+    private double getStackedSocketedRuneMultiplier(ItemStack stack, String family) {
+        return RuneBalance.stackedMultiplier(getSocketedRuneMultipliers(stack, family));
+    }
+
+    private double[] getSocketedRuneMultipliers(ItemStack stack, String family) {
+        if (stack == null || stack.isEmpty()) return new double[0];
         CompoundTag tag = getCustomTag(stack);
         int count = Math.max(0, Math.min(tag.getIntOr("runeborn_socket_count", 0), 2));
-        double best = 0;
+        double[] result = new double[count];
         for (int i = 0; i < count; i++) {
             String socketFamily = tag.getStringOr("runeborn_socket_" + i + "_family", "");
-            String rarity = tag.getStringOr("runeborn_socket_" + i + "_rarity", "");
             if (!family.equals(socketFamily)) continue;
-            best = Math.max(best, RuneBalance.rarityMultiplier(rarity));
+            result[i] = RuneBalance.rarityMultiplier(tag.getStringOr("runeborn_socket_" + i + "_rarity", ""));
         }
-        return best;
+        return result;
     }
 
     private void applyVerdantOnKill(ServerPlayer player, LivingEntity killedEntity) {
         // Design: heal after a hostile mob kill only, not passive animals or players.
         if (killedEntity instanceof ServerPlayer) return;
         if (!"monster".equals(killedEntity.getType().getCategory().getName())) return;
-        double bestMultiplier = getBestSocketedRuneMultiplier(player.getMainHandItem(), "Verdant");
+        double bestMultiplier = getStackedSocketedRuneMultiplier(player.getMainHandItem(), "Verdant");
         if (bestMultiplier <= 0) return;
         double chance = RuneBalance.verdantChance(bestMultiplier);
         if (Math.random() < chance) {

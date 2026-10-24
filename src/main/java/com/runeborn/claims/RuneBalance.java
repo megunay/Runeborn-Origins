@@ -11,11 +11,11 @@ public final class RuneBalance {
     private RuneBalance() {}
 
     /** Shows an action-bar line on each Ember proc. Set to false before a public release. */
-    public static final boolean DEBUG_RUNE_FEEDBACK = true;
+    public static final boolean DEBUG_RUNE_FEEDBACK = false;
 
     // Ember: bonus melee damage.
-    public static final double EMBER_BASE_DAMAGE = 0.5;
-    public static final double EMBER_MAX_DAMAGE = 2.0;
+    public static final double EMBER_BASE_DAMAGE = 1.0;
+    public static final double EMBER_MAX_DAMAGE = 4.0;
 
     // Frost: chance to apply Slowness I on hit.
     public static final double FROST_BASE_CHANCE = 0.10;
@@ -31,6 +31,24 @@ public final class RuneBalance {
     // Void: chance to negate a fall damage event.
     public static final double VOID_BASE_CHANCE = 0.10;
     public static final double VOID_MAX_CHANCE = 0.30;
+
+    /** Share of its value that each additional same-family Rune contributes (strongest counts fully). */
+    public static final double STACK_SECONDARY_SHARE = 0.5;
+
+    /**
+     * Diminishing stacking for same-family Runes on one item: the strongest counts 100%,
+     * the next one counts {@link #STACK_SECONDARY_SHARE}. Weapons have at most two sockets.
+     * Returns 0 when there are no valid Runes.
+     */
+    public static double stackedMultiplier(double... multipliers) {
+        double first = 0, second = 0;
+        for (double m : multipliers) {
+            if (m <= 0) continue;
+            if (m > first) { second = first; first = m; }
+            else if (m > second) { second = m; }
+        }
+        return first + STACK_SECONDARY_SHARE * second;
+    }
 
     /** Rarity name to multiplier. Unknown rarities return 0 so they grant nothing. */
     public static double rarityMultiplier(String rarity) {
